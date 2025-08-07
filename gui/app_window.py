@@ -83,8 +83,15 @@ class AppWindow(ctk.CTk):
             messagebox.showerror("Error", "API Key not set. Please set it in the Settings tab.")
             return
 
+        from .utils.validators import is_valid_url
+
         agent_config = self.agent_controller_tab.get_agent_config()
         task_details = self.task_executor_tab.get_task_details()
+
+        if task_details.get("url") and not is_valid_url(task_details["url"]):
+            from tkinter import messagebox
+            messagebox.showerror("Invalid Input", "The URL in the Task Executor is not valid or is a disallowed address.")
+            return
 
         if not task_details.get("task"):
             from tkinter import messagebox
@@ -228,14 +235,24 @@ class AppWindow(ctk.CTk):
         console.configure(state="disabled")
 
     def scrape_data(self):
+        from .utils.validators import is_valid_url
+
         scrape_config = self.data_extraction_tab.get_scrape_config()
         if scrape_config is None: # Error occurred in get_scrape_config
             return
 
-        if not scrape_config.get("url"):
+        url_to_validate = scrape_config.get("url")
+        if not url_to_validate:
             from tkinter import messagebox
             messagebox.showerror("Error", "URL cannot be empty.")
             return
+
+        if not is_valid_url(url_to_validate):
+            from tkinter import messagebox
+            messagebox.showerror("Invalid Input", "The URL is not valid or is a disallowed address.")
+            return
+
+        self.data_extraction_tab.scrape_button.configure(state="disabled", text="Scraping...")
 
         self.data_extraction_tab.scrape_button.configure(state="disabled", text="Scraping...")
 

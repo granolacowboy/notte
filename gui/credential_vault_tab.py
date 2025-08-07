@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
+from utils.validators import is_valid_url, is_valid_input
 
 class CredentialVaultTab(ctk.CTkFrame):
     def __init__(self, parent, client, vault):
@@ -135,6 +136,14 @@ class CredentialVaultTab(ctk.CTkFrame):
 
         if not url or not username or not password:
             messagebox.showerror("Error", "URL, Username, and Password are required.")
+            return
+
+        if not is_valid_url(url):
+            messagebox.showerror("Invalid Input", "Please enter a valid and secure URL (http/https). Internal or local URLs are not allowed.")
+            return
+
+        if not is_valid_input(username, max_length=100):
+            messagebox.showerror("Invalid Input", "Username contains invalid characters or is too long.")
             return
 
         try:

@@ -4,6 +4,7 @@ import threading
 import json
 from notte_sdk import NotteClient
 from tkinter import messagebox
+from utils.validators import is_valid_cdp_url
 
 class SessionManagerTab(ctk.CTkFrame):
     def __init__(self, parent):
@@ -132,6 +133,9 @@ class SessionManagerTab(ctk.CTkFrame):
             }
             cdp_url = self.cdp_url_var.get()
             if cdp_url:
+                if not is_valid_cdp_url(cdp_url):
+                    self.after(0, lambda: messagebox.showerror("Invalid Input", "The provided CDP URL is not valid."))
+                    return
                 session_kwargs["cdp_url"] = cdp_url
 
             # The Notte SDK's Session is a context manager.

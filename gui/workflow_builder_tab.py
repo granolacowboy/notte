@@ -2,7 +2,8 @@ import customtkinter as ctk
 import threading
 import io
 import contextlib
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
+from utils.validators import is_safe_path, SAFE_BASE_DIR
 
 class WorkflowBuilderTab(ctk.CTkFrame):
     def __init__(self, parent):
@@ -100,10 +101,16 @@ class WorkflowBuilderTab(ctk.CTkFrame):
     def load_script(self):
         filepath = filedialog.askopenfilename(
             title="Open Workflow Script",
+            initialdir=SAFE_BASE_DIR,
             filetypes=(("Python files", "*.py"), ("All files", "*.*"))
         )
         if not filepath:
             return
+
+        if not is_safe_path(filepath):
+            messagebox.showerror("Security Error", "Cannot load files from outside the allowed user data directory.")
+            return
+
         try:
             with open(filepath, 'r') as f:
                 content = f.read()
@@ -115,11 +122,17 @@ class WorkflowBuilderTab(ctk.CTkFrame):
     def save_script(self):
         filepath = filedialog.asksaveasfilename(
             title="Save Workflow Script",
+            initialdir=SAFE_BASE_DIR,
             defaultextension=".py",
             filetypes=(("Python files", "*.py"), ("All files", "*.*"))
         )
         if not filepath:
             return
+
+        if not is_safe_path(filepath):
+            messagebox.showerror("Security Error", "Cannot save files outside the allowed user data directory.")
+            return
+
         try:
             with open(filepath, 'w') as f:
                 f.write(self.script_editor.get("0.0", "end"))

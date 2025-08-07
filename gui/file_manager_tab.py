@@ -1,5 +1,7 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+from utils.validators import is_safe_path, SAFE_BASE_DIR
+import os
 
 class FileManagerTab(ctk.CTkFrame):
     def __init__(self, parent, client):
@@ -48,12 +50,17 @@ class FileManagerTab(ctk.CTkFrame):
             messagebox.showerror("Error", "Client not initialized.")
             return
 
-        filepaths = filedialog.askopenfilenames(title="Select file(s) to upload")
+        filepaths = filedialog.askopenfilenames(
+            title="Select file(s) to upload",
+            initialdir=SAFE_BASE_DIR
+        )
         if not filepaths:
             return
 
         try:
             for fp in filepaths:
+                if not is_safe_path(fp):
+                    raise ValueError(f"Invalid file path. Must be inside {SAFE_BASE_DIR}")
                 self.storage.upload(fp)
             messagebox.showinfo("Success", f"{len(filepaths)} file(s) uploaded successfully.")
         except Exception as e:
@@ -90,8 +97,15 @@ class FileManagerTab(ctk.CTkFrame):
         if not self.storage:
             return
 
-        save_path = filedialog.askdirectory(title="Select folder to save file")
+        save_path = filedialog.askdirectory(
+            title="Select folder to save file",
+            initialdir=SAFE_BASE_DIR
+        )
         if not save_path:
+            return
+
+        if not is_safe_path(save_path):
+            messagebox.showerror("Error", f"Invalid save location. Must be inside {SAFE_BASE_DIR}")
             return
 
         try:
