@@ -38,14 +38,51 @@ class AppWindow(ctk.CTk):
                                                  run_callback=self.run_agent_task,
                                                  stop_callback=self.stop_agent_task)
         self.data_extraction_tab = DataExtractionTab(self.tab_view.tab("Data Extraction"), scrape_callback=self.scrape_data)
-        self.credential_vault_tab = CredentialVaultTab(self.tab_view.tab("Credential Vault"))
-        self.digital_personas_tab = DigitalPersonasTab(self.tab_view.tab("Digital Personas"))
-        self.file_manager_tab = FileManagerTab(self.tab_view.tab("File Manager"))
+        self.client = None
+        self.vault = None
+        self._init_client_and_vault()
+
+        self.credential_vault_tab = CredentialVaultTab(self.tab_view.tab("Credential Vault"), client=self.client, vault=self.vault)
+        self.digital_personas_tab = DigitalPersonasTab(self.tab_view.tab("Digital Personas"), client=self.client)
+        self.file_manager_tab = FileManagerTab(self.tab_view.tab("File Manager"), client=self.client)
         self.workflow_builder_tab = WorkflowBuilderTab(self.tab_view.tab("Workflow Builder"))
         self.settings_tab = SettingsTab(self.tab_view.tab("Settings"))
         self.current_agent_task_info = None
 
+    def _init_client_and_vault(self):
+        from notte_sdk import NotteClient
+        import json, os
+
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+
+            api_key = config.get("api_key")
+            if not api_key:
+                return
+
+            self.client = NotteClient(api_key=api_key)
+
+            vault_id = config.get("vault_id")
+            if vault_id:
+                self.vault = self.client.vaults.get(vault_id)
+            else:
+                self.vault = self.client.vaults.create()
+                config["vault_id"] = self.vault.vault_id
+                with open(config_path, 'w') as f:
+                    json.dump(config, f, indent=4)
+
+        except Exception as e:
+            print(f"Error initializing Notte client or vault: {e}")
+
+
     def run_agent_task(self):
+        if not self.client:
+            from tkinter import messagebox
+            messagebox.showerror("Error", "API Key not set. Please set it in the Settings tab.")
+            return
+
         agent_config = self.agent_controller_tab.get_agent_config()
         task_details = self.task_executor_tab.get_task_details()
 
@@ -92,32 +129,25 @@ class AppWindow(ctk.CTk):
 
     def _run_agent_task_worker(self, agent_config, task_details):
         import asyncio
-        import json
-        import os
-        from notte_sdk import NotteClient
 
         try:
-            config_path = os.path.join(os.path.dirname(__file__), "config.json")
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            api_key = config.get("api_key")
+            with self.client.Session(headless=True) as session:
+                if agent_config.pop("attach_vault", False) and self.vault:
+                    agent_config["vault"] = self.vault
 
-            if not api_key:
-                raise ValueError("API Key not found in settings.")
+                agent_config.pop("attach_persona", None)
+                agent_config.pop("attach_files", None)
 
-            client = NotteClient(api_key=api_key)
-
-            with client.Session(headless=True) as session:
-                agent = client.Agent(session=session, **agent_config)
+                agent = self.client.Agent(session=session, **agent_config)
 
                 start_response = agent.start(task=task_details["task"], url=task_details.get("url") or None)
                 self.current_agent_task_info = {
-                    "client": client,
+                    "client": self.client,
                     "agent_id": start_response.agent_id,
                     "session_id": start_response.session_id,
                 }
 
-                asyncio.run(self._watch_agent_logs(client.agents, start_response.agent_id, start_response.session_id))
+                asyncio.run(self._watch_agent_logs(self.client.agents, start_response.agent_id, start_response.session_id))
 
         except Exception as e:
             import traceback
@@ -215,20 +245,10 @@ class AppWindow(ctk.CTk):
         thread.start()
 
     def _scrape_data_worker(self, scrape_config):
-        from notte_sdk import NotteClient
-        import json, os
-
         output_parts = []
         try:
-            config_path = os.path.join(os.path.dirname(__file__), "config.json")
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            api_key = config.get("api_key")
-
-            if not api_key:
-                raise ValueError("API Key not found in settings.")
-
-            client = NotteClient(api_key=api_key)
+            if not self.client:
+                raise ValueError("API Key not set. Please set it in the Settings tab.")
 
             batch_queue = self.data_extraction_tab.get_batch_queue()
 

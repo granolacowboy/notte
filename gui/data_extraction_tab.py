@@ -99,6 +99,16 @@ class DataExtractionTab(ctk.CTkFrame):
         result_label = ctk.CTkLabel(self.result_frame, text="Extracted Data", font=ctk.CTkFont(size=16, weight="bold"))
         result_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
+        self.export_frame = ctk.CTkFrame(self.result_frame, fg_color="transparent")
+        self.export_frame.grid(row=0, column=0, padx=10, pady=5, sticky="e")
+
+        self.export_json_button = ctk.CTkButton(self.export_frame, text="Export JSON", width=100, command=lambda: self.export_data("json"))
+        self.export_json_button.pack(side="left", padx=5)
+        self.export_csv_button = ctk.CTkButton(self.export_frame, text="Export CSV", width=100, command=lambda: self.export_data("csv"))
+        self.export_csv_button.pack(side="left", padx=5)
+        self.export_excel_button = ctk.CTkButton(self.export_frame, text="Export Excel", width=100, command=lambda: self.export_data("excel"))
+        self.export_excel_button.pack(side="left", padx=5)
+
         self.result_text = ctk.CTkTextbox(self.result_frame, state="disabled", font=("monospace", 12))
         self.result_text.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
@@ -151,3 +161,63 @@ class DataExtractionTab(ctk.CTkFrame):
 
     def get_batch_queue(self):
         return self.url_queue
+
+    def export_data(self, format):
+        content = self.result_text.get("0.0", "end-1c")
+        if not content.strip():
+            messagebox.showerror("Error", "There is no data to export.")
+            return
+
+        if format == "json":
+            file_ext = ".json"
+            file_types = [("JSON files", "*.json")]
+        elif format == "csv":
+            file_ext = ".csv"
+            file_types = [("CSV files", "*.csv")]
+        elif format == "excel":
+            file_ext = ".xlsx"
+            file_types = [("Excel files", "*.xlsx")]
+        else:
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            title=f"Export Data as {format.upper()}",
+            defaultextension=file_ext,
+            filetypes=file_types
+        )
+        if not filepath:
+            return
+
+        try:
+            if format == "json":
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(content)
+            else:
+                import pandas as pd
+                import json
+                try:
+                    data = json.loads(content)
+                    if isinstance(data, dict):
+                        # Handle nested structures if possible, simple case for now
+                        if len(data.keys()) == 1:
+                            key = list(data.keys())[0]
+                            df = pd.DataFrame(data[key])
+                        else:
+                            df = pd.DataFrame([data])
+                    elif isinstance(data, list):
+                        df = pd.DataFrame(data)
+                    else:
+                        raise ValueError("JSON content is not a list of objects or a single object.")
+
+                    if format == "csv":
+                        df.to_csv(filepath, index=False)
+                    elif format == "excel":
+                        df.to_excel(filepath, index=False)
+
+                except (json.JSONDecodeError, ValueError) as e:
+                    raise ValueError(f"Could not parse data for {format.upper()} export. Ensure data is valid JSON representing a list of objects.\n\nError: {e}")
+
+            messagebox.showinfo("Success", f"Data successfully exported to {filepath}")
+
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export data:\n{e}")

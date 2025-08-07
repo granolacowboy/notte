@@ -3,5 +3,6 @@
     "theme": "System",
     "default_browser": "chromium",
     "log_level": "INFO",
-    "auto_save": true
+    "auto_save": true,
+    "vault_id": null
 }
