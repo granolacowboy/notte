@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import os
 import threading
-from dotenv import load_dotenv
+import json
 from notte_sdk import NotteClient
 from tkinter import messagebox
 
@@ -18,14 +18,20 @@ class SessionManagerTab(ctk.CTkFrame):
         self._create_widgets()
 
     def _init_client(self):
-        load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
-        api_key = os.getenv("NOTTE_API_KEY")
-        if not api_key or api_key == "YOUR_API_KEY_HERE":
-            # This is a basic way to handle this. A more robust app might show this in the UI.
-            print("WARNING: NOTTE_API_KEY not found or not set. Please set it in gui/.env")
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+
+            api_key = config.get("api_key")
+            if not api_key or api_key == "YOUR_API_KEY_HERE":
+                print("WARNING: Notte API Key is not set in the Settings tab.")
+                self.notte_client = None
+            else:
+                self.notte_client = NotteClient(api_key=api_key)
+        except (FileNotFoundError, json.JSONDecodeError):
+            print("WARNING: config.json not found or invalid. API client not initialized.")
             self.notte_client = None
-        else:
-            self.notte_client = NotteClient(api_key=api_key)
 
     def _create_widgets(self):
         # Create main layout
