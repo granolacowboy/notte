@@ -1,10 +1,11 @@
 import customtkinter as ctk
 
 class TaskExecutorTab(ctk.CTkFrame):
-    def __init__(self, parent, run_callback):
+    def __init__(self, parent, run_callback, stop_callback):
         super().__init__(parent, fg_color="transparent")
         self.pack(fill="both", expand=True)
         self.run_callback = run_callback
+        self.stop_callback = stop_callback
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1) # Main content
@@ -31,7 +32,7 @@ class TaskExecutorTab(ctk.CTkFrame):
 
         self.run_button = ctk.CTkButton(self.controls_frame, text="Run", command=self.run_callback)
         self.run_button.pack(side="left", padx=5)
-        self.stop_button = ctk.CTkButton(self.controls_frame, text="Stop", state="disabled")
+        self.stop_button = ctk.CTkButton(self.controls_frame, text="Stop", state="disabled", command=self.stop_callback)
         self.stop_button.pack(side="left", padx=5)
         self.pause_button = ctk.CTkButton(self.controls_frame, text="Pause", state="disabled")
         self.pause_button.pack(side="left", padx=5)
