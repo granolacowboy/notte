@@ -1,6 +1,12 @@
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog, filedialog
 from utils.validators import is_valid_url, is_valid_input
+import json
+import base64
+import os
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 class CredentialVaultTab(ctk.CTkFrame):
     def __init__(self, parent, client, vault):
@@ -23,6 +29,14 @@ class CredentialVaultTab(ctk.CTkFrame):
 
         list_label = ctk.CTkLabel(self.list_frame, text="Stored Credentials", font=ctk.CTkFont(size=16, weight="bold"))
         list_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        self.list_toolbar = ctk.CTkFrame(self.list_frame, fg_color="transparent")
+        self.list_toolbar.grid(row=0, column=0, padx=10, pady=5, sticky="e")
+
+        self.import_button = ctk.CTkButton(self.list_toolbar, text="Import", width=80, command=self.import_vault)
+        self.import_button.pack(side="left", padx=5)
+        self.export_button = ctk.CTkButton(self.list_toolbar, text="Export", width=80, command=self.export_vault)
+        self.export_button.pack(side="left", padx=5)
 
         self.credentials_listbox = ctk.CTkScrollableFrame(self.list_frame)
         self.credentials_listbox.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
@@ -174,3 +188,95 @@ class CredentialVaultTab(ctk.CTkFrame):
             self.refresh_credentials()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete credential:\n{e}")
+
+    def _derive_key(self, password: str, salt: bytes) -> bytes:
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100000,
+        )
+        return base64.urlsafe_b64encode(kdf.derive(password.encode()))
+
+    def export_vault(self):
+        if not self.credentials:
+            messagebox.showerror("Error", "There are no credentials to export.")
+            return
+
+        password = simpledialog.askstring("Password", "Enter a password to encrypt the vault:", show='*')
+        if not password:
+            messagebox.showwarning("Cancelled", "Export cancelled.")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            title="Export Vault",
+            defaultextension=".nve", # Notte Vault Encrypted
+            filetypes=(("Notte Vault File", "*.nve"), ("All files", "*.*"))
+        )
+        if not filepath:
+            return
+
+        try:
+            # Serialize credentials to JSON
+            creds_to_export = [cred.model_dump() for cred in self.credentials]
+            json_data = json.dumps(creds_to_export).encode('utf-8')
+
+            # Generate a salt and derive key
+            salt = os.urandom(16)
+            key = self._derive_key(password, salt)
+
+            # Encrypt the data
+            fernet = Fernet(key)
+            encrypted_data = fernet.encrypt(json_data)
+
+            # Save salt + encrypted data to file
+            with open(filepath, 'wb') as f:
+                f.write(salt)
+                f.write(encrypted_data)
+
+            messagebox.showinfo("Success", f"Vault successfully exported to {filepath}")
+
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export vault:\n{e}")
+
+    def import_vault(self):
+        if not self.vault:
+            messagebox.showerror("Error", "Vault not initialized. Please set API key in Settings.")
+            return
+
+        filepath = filedialog.askopenfilename(
+            title="Import Vault",
+            filetypes=(("Notte Vault File", "*.nve"), ("All files", "*.*"))
+        )
+        if not filepath:
+            return
+
+        password = simpledialog.askstring("Password", "Enter the password for the vault file:", show='*')
+        if not password:
+            messagebox.showwarning("Cancelled", "Import cancelled.")
+            return
+
+        try:
+            with open(filepath, 'rb') as f:
+                salt = f.read(16)
+                encrypted_data = f.read()
+
+            key = self._derive_key(password, salt)
+            fernet = Fernet(key)
+            decrypted_data = fernet.decrypt(encrypted_data)
+
+            credentials_to_import = json.loads(decrypted_data.decode('utf-8'))
+
+            for cred in credentials_to_import:
+                self.vault.add_credentials(
+                    url=cred['url'],
+                    username=cred['username'],
+                    password=cred['password'],
+                    totp_secret=cred.get('totp_secret')
+                )
+
+            self.refresh_credentials()
+            messagebox.showinfo("Success", f"Successfully imported {len(credentials_to_import)} credential(s).")
+
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import vault. Check the password or file integrity.\n\nError: {e}")
