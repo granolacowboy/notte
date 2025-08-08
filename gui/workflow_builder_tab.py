@@ -1,141 +1,123 @@
 import customtkinter as ctk
-import threading
-import io
-import contextlib
-from tkinter import filedialog, messagebox
-from utils.validators import is_safe_path, SAFE_BASE_DIR
+from tkinter import messagebox
+from tknodesystem import NodeEditor
 
 class WorkflowBuilderTab(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color="transparent")
         self.pack(fill="both", expand=True)
 
+        self.grid_columnconfigure(0, weight=3) # Node editor gets more space
+        self.grid_columnconfigure(1, weight=1) # Properties panel gets less
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=1)
 
-        # Main paned window to split editor and output
-        self.paned_window = ctk.CTkFrame(self, fg_color="transparent")
-        self.paned_window.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        self.paned_window.grid_rowconfigure(0, weight=2) # Editor gets more space
-        self.paned_window.grid_rowconfigure(1, weight=1) # Output gets less
-        self.paned_window.grid_columnconfigure(0, weight=1)
+        self.editor = NodeEditor(self, available_nodes={})
+        self.editor.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 
-        # --- Editor Frame ---
-        self.editor_frame = ctk.CTkFrame(self.paned_window)
-        self.editor_frame.grid(row=0, column=0, sticky="nsew")
-        self.editor_frame.grid_rowconfigure(1, weight=1)
-        self.editor_frame.grid_columnconfigure(0, weight=1)
+        # --- Properties Panel ---
+        self.properties_frame = ctk.CTkFrame(self, border_width=1)
+        self.properties_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        self.properties_frame.grid_columnconfigure(0, weight=1)
 
-        self.editor_toolbar = ctk.CTkFrame(self.editor_frame, fg_color="transparent")
-        self.editor_toolbar.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        prop_label = ctk.CTkLabel(self.properties_frame, text="Properties", font=ctk.CTkFont(size=16, weight="bold"))
+        prop_label.pack(padx=10, pady=10, anchor="w")
 
-        self.run_button = ctk.CTkButton(self.editor_toolbar, text="Run", command=self.run_script)
-        self.run_button.pack(side="left", padx=5)
-        self.load_button = ctk.CTkButton(self.editor_toolbar, text="Load", command=self.load_script)
-        self.load_button.pack(side="left", padx=5)
-        self.save_button = ctk.CTkButton(self.editor_toolbar, text="Save", command=self.save_script)
-        self.save_button.pack(side="left", padx=5)
+        self.properties_content_frame = ctk.CTkFrame(self.properties_frame, fg_color="transparent")
+        self.properties_content_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        self.script_editor = ctk.CTkTextbox(self.editor_frame, font=("monospace", 13))
-        self.script_editor.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.script_editor.insert("0.0", "# Your Notte workflow script here\n\n"
-                                         "from notte_sdk import NotteClient\n\n"
-                                         "# Note: The script will use the API key from Settings\n"
-                                         "client = NotteClient()\n\n"
-                                         "with client.Session(headless=False) as session:\n"
-                                         "    session.goto('https://www.google.com')\n"
-                                         "    print('Successfully navigated to Google!')\n")
+        # Setup custom nodes and event binding
+        self.setup_node_menu()
+        self.editor.bind("<<NodeSelected>>", self.on_node_selected)
+        self.editor.bind("<<NodeDeselected>>", self.on_node_deselected)
 
-        # --- Output Frame ---
-        self.output_frame = ctk.CTkFrame(self.paned_window)
-        self.output_frame.grid(row=1, column=0, sticky="nsew", pady=(10,0))
-        self.output_frame.grid_rowconfigure(0, weight=1)
-        self.output_frame.grid_columnconfigure(0, weight=1)
+    def setup_node_menu(self):
+        self.editor.add_node("Start", self.create_start_node)
+        self.editor.add_node("End", self.create_end_node)
+        self.editor.add_node("Script Action", self.create_script_action_node)
+        self.editor.add_node("Agent Task", self.create_agent_task_node)
 
-        self.output_console = ctk.CTkTextbox(self.output_frame, font=("monospace", 12), state="disabled")
-        self.output_console.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-
-    def run_script(self):
-        self.output_console.configure(state="normal")
-        self.output_console.delete("0.0", "end")
-        self.output_console.insert("0.0", "Running script...\n\n")
-        self.output_console.configure(state="disabled")
-
-        script_content = self.script_editor.get("0.0", "end")
-
-        thread = threading.Thread(target=self._execute_script_worker, args=(script_content,))
-        thread.daemon = True
-        thread.start()
-
-    def _execute_script_worker(self, script_content):
-        # Redirect stdout to capture print statements
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stdout_capture):
-            try:
-                # We need to provide the NotteClient with the API key from config
-                # A better implementation would inject a pre-configured client
-                import os, json
-                from notte_sdk import NotteClient
-                config_path = os.path.join(os.path.dirname(__file__), "config.json")
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                api_key = config.get("api_key")
-
-                # Make the client available in the script's scope
-                exec_globals = {
-                    "NotteClient": lambda: NotteClient(api_key=api_key)
-                }
-                exec(script_content, exec_globals)
-
-            except Exception as e:
-                print(f"An error occurred:\n{e}")
-
-        output = stdout_capture.getvalue()
-        self.after(0, self.update_output, output)
-
-    def update_output(self, output):
-        self.output_console.configure(state="normal")
-        self.output_console.insert("end", output)
-        self.output_console.configure(state="disabled")
-
-    def load_script(self):
-        filepath = filedialog.askopenfilename(
-            title="Open Workflow Script",
-            initialdir=SAFE_BASE_DIR,
-            filetypes=(("Python files", "*.py"), ("All files", "*.*"))
+    def create_start_node(self):
+        self.editor.create_node(
+            node_type="Start",
+            name="Start",
+            outputs=[{"name": "Flow"}]
         )
-        if not filepath:
-            return
 
-        if not is_safe_path(filepath):
-            messagebox.showerror("Security Error", "Cannot load files from outside the allowed user data directory.")
-            return
-
-        try:
-            with open(filepath, 'r') as f:
-                content = f.read()
-            self.script_editor.delete("0.0", "end")
-            self.script_editor.insert("0.0", content)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load script:\n{e}")
-
-    def save_script(self):
-        filepath = filedialog.asksaveasfilename(
-            title="Save Workflow Script",
-            initialdir=SAFE_BASE_DIR,
-            defaultextension=".py",
-            filetypes=(("Python files", "*.py"), ("All files", "*.*"))
+    def create_end_node(self):
+        self.editor.create_node(
+            node_type="End",
+            name="End",
+            inputs=[{"name": "Flow"}]
         )
-        if not filepath:
+
+    def create_script_action_node(self):
+        self.editor.create_node(
+            node_type="Script Action",
+            name="Script Action",
+            inputs=[{"name": "Flow In"}],
+            outputs=[{"name": "Flow Out"}]
+        )
+        # In a future step, we will add properties like script content here.
+
+    def create_agent_task_node(self):
+        node = self.editor.create_node(
+            node_type="Agent Task",
+            name="Agent Task",
+            inputs=[{"name": "Flow In"}],
+            outputs=[{"name": "Flow Out"}]
+        )
+        node.data["prompt"] = "Enter your natural language task here."
+
+    def on_node_selected(self, event):
+        self.populate_properties_panel()
+
+    def on_node_deselected(self, event):
+        self.clear_properties_panel()
+
+    def clear_properties_panel(self):
+        for widget in self.properties_content_frame.winfo_children():
+            widget.destroy()
+
+    def populate_properties_panel(self):
+        self.clear_properties_panel()
+
+        selected_nodes = self.editor.get_selected_nodes()
+        if not selected_nodes:
             return
 
-        if not is_safe_path(filepath):
-            messagebox.showerror("Security Error", "Cannot save files outside the allowed user data directory.")
-            return
+        node = selected_nodes[0] # For now, only handle single selection
 
-        try:
-            with open(filepath, 'w') as f:
-                f.write(self.script_editor.get("0.0", "end"))
-            messagebox.showinfo("Success", f"Script saved to {filepath}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save script:\n{e}")
+        # Add a label for the node name
+        name_label = ctk.CTkLabel(self.properties_content_frame, text=f"Node: {node.name}")
+        name_label.pack(anchor="w", pady=(0, 10))
+
+        if node.node_type == "Script Action":
+            self.build_script_action_properties(node)
+        elif node.node_type == "Agent Task":
+            self.build_agent_task_properties(node)
+
+    def build_script_action_properties(self, node):
+        label = ctk.CTkLabel(self.properties_content_frame, text="Script Command:")
+        label.pack(anchor="w")
+
+        text_box = ctk.CTkTextbox(self.properties_content_frame, height=100)
+        text_box.pack(fill="x", expand=True)
+        text_box.insert("0.0", node.data.get("script", "# Enter script here"))
+
+        def update_script_data(event):
+            node.data["script"] = text_box.get("0.0", "end-1c")
+
+        text_box.bind("<KeyRelease>", update_script_data)
+
+    def build_agent_task_properties(self, node):
+        label = ctk.CTkLabel(self.properties_content_frame, text="Task Prompt:")
+        label.pack(anchor="w")
+
+        text_box = ctk.CTkTextbox(self.properties_content_frame, height=100)
+        text_box.pack(fill="x", expand=True)
+        text_box.insert("0.0", node.data.get("prompt", "# Enter prompt here"))
+
+        def update_prompt_data(event):
+            node.data["prompt"] = text_box.get("0.0", "end-1c")
+
+        text_box.bind("<KeyRelease>", update_prompt_data)
